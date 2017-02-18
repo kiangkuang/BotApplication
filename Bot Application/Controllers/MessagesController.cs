@@ -66,29 +66,29 @@ namespace Bot_Application.Controllers
         private async Task Reply(Activity activity, string text)
         {
             var connector = new ConnectorClient(new Uri(activity.ServiceUrl));
-            await connector.Conversations.ReplyToActivityAsync(activity.CreateReply(text));
+            await connector.Conversations.ReplyToActivityAsync(activity.CreateReply(text.Replace("\n", "\n\n")));
         }
 
         private string Ocr(string picUrl)
         {
             try
             {
-                var file = Path.GetTempPath() + picUrl.GetHashCode();
+                var file = Path.Combine(Path.GetTempPath(), picUrl.GetHashCode().ToString());
                 new WebClient().DownloadFile(picUrl, file);
                 using (var engine = new TesseractEngine(HostingEnvironment.MapPath(@"~/tessdata"), "eng"))
                 using (var page = engine.Process(Pix.LoadFromFile(file)))
                 {
                     var text = page.GetText();
-                    Console.WriteLine("Mean confidence: {0}", page.GetMeanConfidence());
-                    Console.WriteLine("Text (GetText): \r\n{0}", text);
+                    System.Diagnostics.Debug.WriteLine("Mean confidence: {0}", page.GetMeanConfidence());
+                    System.Diagnostics.Debug.WriteLine("Text (GetText): \r\n{0}", text);
                     File.Delete(file);
                     return text;
                 }
             }
             catch (Exception e)
             {
-                Console.WriteLine(e);
-                throw;
+                System.Diagnostics.Debug.WriteLine(e.ToString());
+                return e.ToString();
             }
         }
     }
