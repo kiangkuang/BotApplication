@@ -1,14 +1,14 @@
 ﻿using System;
-using System.Linq;
+using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
+using System.Web.Hosting;
 using System.Web.Http;
-using System.Web.Http.Description;
 using Microsoft.Bot.Connector;
-using Newtonsoft.Json;
+using Tesseract;
 
-namespace Bot_Application
+namespace Bot_Application.Controllers
 {
     [BotAuthentication]
     public class MessagesController : ApiController
@@ -19,51 +19,77 @@ namespace Bot_Application
         /// </summary>
         public async Task<HttpResponseMessage> Post([FromBody]Activity activity)
         {
-            if (activity.Type == ActivityTypes.Message)
+            switch (activity.Type)
             {
-                ConnectorClient connector = new ConnectorClient(new Uri(activity.ServiceUrl));
-                // calculate something for us to return
-                int length = (activity.Text ?? string.Empty).Length;
+                case ActivityTypes.Message:
+                    await ProcessMessage(activity);
+                    break;
+                case ActivityTypes.DeleteUserData:
+                    // Implement user deletion here
+                    // If we handle user deletion, return a real message
+                    break;
+                case ActivityTypes.ConversationUpdate:
+                    // Handle conversation state changes, like members being added and removed
+                    // Use Activity.MembersAdded and Activity.MembersRemoved and Activity.Action for info
+                    // Not available in all channels
+                    break;
+                case ActivityTypes.ContactRelationUpdate:
+                    // Handle add/remove from contact lists
+                    // Activity.From + Activity.Action represent what happened
+                    break;
+                case ActivityTypes.Typing:
+                    // Handle knowing that the user is typing
+                    break;
+                case ActivityTypes.Ping:
+                    break;
+            }
 
-                // return our reply to the user
-                Activity reply = activity.CreateReply($"You sent {activity.Text} which was {length} characters");
-                await connector.Conversations.ReplyToActivityAsync(reply);
-            }
-            else
-            {
-                HandleSystemMessage(activity);
-            }
             var response = Request.CreateResponse(HttpStatusCode.OK);
             return response;
         }
 
-        private Activity HandleSystemMessage(Activity message)
+        private async Task ProcessMessage(Activity activity)
         {
-            if (message.Type == ActivityTypes.DeleteUserData)
+            if (activity.Attachments != null)
             {
-                // Implement user deletion here
-                // If we handle user deletion, return a real message
+                foreach (var attachment in activity.Attachments)
+                {
+                    await Reply(activity, Ocr(attachment.ContentUrl));
+                }
             }
-            else if (message.Type == ActivityTypes.ConversationUpdate)
+            else
             {
-                // Handle conversation state changes, like members being added and removed
-                // Use Activity.MembersAdded and Activity.MembersRemoved and Activity.Action for info
-                // Not available in all channels
+                await Reply(activity, activity.Text);
             }
-            else if (message.Type == ActivityTypes.ContactRelationUpdate)
-            {
-                // Handle add/remove from contact lists
-                // Activity.From + Activity.Action represent what happened
-            }
-            else if (message.Type == ActivityTypes.Typing)
-            {
-                // Handle knowing tha the user is typing
-            }
-            else if (message.Type == ActivityTypes.Ping)
-            {
-            }
+        }
 
-            return null;
+        private async Task Reply(Activity activity, string text)
+        {
+            var connector = new ConnectorClient(new Uri(activity.ServiceUrl));
+            await connector.Conversations.ReplyToActivityAsync(activity.CreateReply(text));
+        }
+
+        private string Ocr(string picUrl)
+        {
+            try
+            {
+                var file = Path.GetTempPath() + picUrl.GetHashCode();
+                new WebClient().DownloadFile(picUrl, file);
+                using (var engine = new TesseractEngine(HostingEnvironment.MapPath(@"~/tessdata"), "eng"))
+                using (var page = engine.Process(Pix.LoadFromFile(file)))
+                {
+                    var text = page.GetText();
+                    Console.WriteLine("Mean confidence: {0}", page.GetMeanConfidence());
+                    Console.WriteLine("Text (GetText): \r\n{0}", text);
+                    File.Delete(file);
+                    return text;
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e);
+                throw;
+            }
         }
     }
 }
