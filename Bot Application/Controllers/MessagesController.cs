@@ -91,11 +91,19 @@ namespace Bot_Application.Controllers
             var edged = CannyEdge(image, ratio);
             var screenContour = GetContour(edged);
 
-            var boundRect = Cv2.BoundingRect(screenContour);
-            var transformed = FixPerspective(orig, screenContour, boundRect, ratio);
+            Mat final;
+            if (screenContour != null)
+            {
+                var boundRect = Cv2.BoundingRect(screenContour);
+                var transformed = FixPerspective(orig, screenContour, boundRect, ratio);
 
-            var cropped = transformed[ResizeBoundRect(boundRect, ratio)];
-            var final = CleanImage(cropped);
+                var cropped = transformed[ResizeBoundRect(boundRect, ratio)];
+                final = CleanImage(cropped);
+            }
+            else
+            {
+                final = CleanImage(orig);
+            }
 
             /*
             using (new Window("img", final))
@@ -146,7 +154,8 @@ namespace Bot_Application.Controllers
             Point[][] contours;
             HierarchyIndex[] hierarchyIndexes;
             Cv2.FindContours(edged.Clone(), out contours, out hierarchyIndexes, ContourRetrieval.List, ContourChain.ApproxSimple);
-            var sortedContours = contours.OrderByDescending(GetContourArea);
+            var area = edged.Height * edged.Width;
+            var sortedContours = contours.Where(c => GetContourArea(c) / area > 0.3).OrderByDescending(GetContourArea);
 
             Point[] selectedContour = null;
             foreach (var contour in sortedContours)
