@@ -1,7 +1,6 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
-using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
@@ -13,8 +12,7 @@ namespace Bot_Application.Controllers
     [BotAuthentication]
     public class MessagesController : ApiController
     {
-        private readonly Tesseract _tesseract = new Tesseract();
-        private readonly OpenCv _openCv = new OpenCv();
+        private readonly Toto _toto = new Toto();
 
         /// <summary>
         /// POST: api/Messages
@@ -66,10 +64,7 @@ namespace Bot_Application.Controllers
             {
                 foreach (var attachment in activity.Attachments)
                 {
-                    var file = DownloadFile(attachment.ContentUrl);
-                    var processedImage = _openCv.ProcessImage(file);
-                    var results = _tesseract.Ocr(processedImage);
-                    await Reply(activity, string.Join("\n", results.Select(x => string.Join(" ", x)).ToList()));
+                    await Reply(activity, _toto.Process(attachment.ContentUrl));
                 }
             }
             else
@@ -78,17 +73,15 @@ namespace Bot_Application.Controllers
             }
         }
 
-        private async Task Reply(Activity activity, string text)
+        private async Task Reply(Activity activity, string message)
         {
             var connector = new ConnectorClient(new Uri(activity.ServiceUrl));
-            await connector.Conversations.ReplyToActivityAsync(activity.CreateReply(text.Replace("\n", "\n\n")));
+            await connector.Conversations.ReplyToActivityAsync(activity.CreateReply(message.Replace("\n", "\n\n")));
         }
 
-        private string DownloadFile(string picUrl)
+        private async Task Reply(Activity activity, IEnumerable<string> messages)
         {
-            var file = Path.Combine(Path.GetTempPath(), picUrl.GetHashCode() + ".jpg");
-            new WebClient().DownloadFile(picUrl, file);
-            return file;
+            await Reply(activity, string.Join("\n", messages));
         }
     }
 }

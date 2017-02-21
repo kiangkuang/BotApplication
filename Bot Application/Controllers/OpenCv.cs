@@ -8,7 +8,7 @@ namespace Bot_Application.Controllers
 {
     public class OpenCv
     {
-        public string ProcessImage(string file)
+        public IEnumerable<IEnumerable<Mat>> ProcessImage(string file)
         {
             var orig = Cv2.ImRead(file);
             var ratio = 1000f / Math.Max(orig.Height, orig.Width);
@@ -31,49 +31,51 @@ namespace Bot_Application.Controllers
                 cleaned = CleanImage(orig);
             }
 
-            var segments = GetSegments(cleaned);
-
-            /*
-            using (new Window("img", final))
-            {
-                Cv2.WaitKey();
-            }
-            */
-
-            // File.Delete(file);
-            var newFile = file + "-final.jpg";
-            Cv2.ImWrite(newFile, cleaned);
-
-            return newFile;
+            return SplitImages(cleaned);
         }
 
-        private IEnumerable<Mat> GetSegments(Mat image)
+        private Mat CannyEdge(Mat image, float ratio)
         {
-            var dilate = new Mat();
-            var element = Cv2.GetStructuringElement(StructuringElementShape.Rect, new Size(image.Width / 40, 1));
-            Cv2.Dilate(image.Threshold(127, 255, ThresholdType.BinaryInv), dilate, element);
+            var blur = new Mat();
+            var edge = new Mat();
+            image = image.Resize(new Size(), ratio, ratio);
+            Cv2.GaussianBlur(image, blur, new Size(5, 5), 0);
+            Cv2.Canny(blur, edge, 75, 200);
+            return edge;
+        }
 
-            HierarchyIndex[] hierarchyIndices;
+        private Point[] GetContour(Mat edged)
+        {
             Point[][] contours;
-            Cv2.FindContours(dilate, out contours, out hierarchyIndices, ContourRetrieval.External, ContourChain.ApproxNone);
+            HierarchyIndex[] hierarchyIndexes;
+            Cv2.FindContours(edged.Clone(), out contours, out hierarchyIndexes, ContourRetrieval.List, ContourChain.ApproxSimple);
+            var area = edged.Height * edged.Width;
+            var sortedContours = contours.Where(c => GetContourArea(c) / area > 0.3).OrderByDescending(GetContourArea);
 
-            var orderedContours = SortSegments(contours);
-
-            var results = new List<Mat>();
-            foreach (var contour in orderedContours)
+            foreach (var contour in sortedContours)
             {
-                var dst = new Mat();
-                Cv2.CopyMakeBorder(image[Cv2.BoundingRect(contour)], dst, 10, 10, 10, 10, BorderType.Constant, Scalar.White);
-
-                results.Add(dst);
+                var epsilon = 0.02 * Cv2.ArcLength(contour, true);
+                var approx = Cv2.ApproxPolyDP(contour, epsilon, true);
+                if (approx.Length == 4)
+                {
+                    return approx;
+                }
             }
-            return results;
+            return null;
         }
 
-        private IEnumerable<Point[]> SortSegments(IEnumerable<Point[]> contours)
+        private double GetContourArea(Point[] polygon)
         {
-            // TODO: group similar Y then order by X
-            return contours.OrderBy(c => c[0].Y).ThenBy(c => c[0].X);
+            double area = 0;
+            for (var i = 0; i < polygon.Length; i++)
+            {
+                var j = (i + 1) % polygon.Length;
+
+                area += polygon[i].X * polygon[j].Y;
+                area -= polygon[i].Y * polygon[j].X;
+            }
+
+            return Math.Abs(area / 2);
         }
 
         private Mat FixPerspective(Mat orig, IList<Point> screenContour, Rect boundRect, float ratio)
@@ -82,12 +84,6 @@ namespace Bot_Application.Controllers
             var transformed = new Mat();
             Cv2.WarpPerspective(orig, transformed, transMtx, orig.Size());
             return transformed;
-        }
-
-        private static Mat CleanImage(Mat cropped)
-        {
-            var grey = cropped.CvtColor(ColorConversion.RgbToGray);
-            return grey.Threshold(127, 255, ThresholdType.Binary);
         }
 
         private Mat GetTransMtx(IList<Point> screenContour, Rect boundRect, float ratio)
@@ -106,45 +102,58 @@ namespace Bot_Application.Controllers
             return Cv2.GetPerspectiveTransform(src, dest);
         }
 
-        private Point[] GetContour(Mat edged)
+        private static Mat CleanImage(Mat cropped)
         {
-            Point[][] contours;
-            HierarchyIndex[] hierarchyIndexes;
-            Cv2.FindContours(edged.Clone(), out contours, out hierarchyIndexes, ContourRetrieval.List, ContourChain.ApproxSimple);
-            var area = edged.Height * edged.Width;
-            var sortedContours = contours.Where(c => GetContourArea(c) / area > 0.3).OrderByDescending(GetContourArea);
+            var grey = cropped.CvtColor(ColorConversion.RgbToGray);
+            return grey.Threshold(127, 255, ThresholdType.Binary);
+        }
 
-            Point[] selectedContour = null;
-            foreach (var contour in sortedContours)
+        private IEnumerable<IEnumerable<Mat>> SplitImages(Mat image)
+        {
+            var dilate = new Mat();
+            var element = Cv2.GetStructuringElement(StructuringElementShape.Rect, new Size(image.Width / 40, 1));
+            Cv2.Dilate(image.Threshold(127, 255, ThresholdType.BinaryInv), dilate, element);
+
+            HierarchyIndex[] hierarchyIndices;
+            Point[][] contours;
+            Cv2.FindContours(dilate, out contours, out hierarchyIndices, ContourRetrieval.External, ContourChain.ApproxNone);
+
+            var contourRows = SortToRows(contours);
+
+            var imageRows = contourRows.Select(r => r.Select(c =>
             {
-                var epsilon = 0.02 * Cv2.ArcLength(contour, true);
-                var approx = Cv2.ApproxPolyDP(contour, epsilon, true);
-                if (approx.Length == 4)
+                var img = new Mat();
+                Cv2.CopyMakeBorder(img[Cv2.BoundingRect(c)], img, 10, 10, 10, 10, BorderType.Constant, Scalar.White);
+
+                // using (new Window("image", segment)) { Cv2.WaitKey(); }
+
+                return img;
+            }));
+
+            return imageRows;
+        }
+
+        private IEnumerable<IEnumerable<Point[]>> SortToRows(IEnumerable<Point[]> contours)
+        {
+            var contourRows = new List<List<Point[]>>();
+            foreach (var contour in contours.OrderBy(c => c[0].Y))
+            {
+                if (IsSameRow(contourRows.DefaultIfEmpty(null).Last(), contour))
                 {
-                    selectedContour = approx;
-                    break;
+                    contourRows.Last().Add(contour);
+                }
+                else
+                {
+                    contourRows.Add(new List<Point[]> { contour });
                 }
             }
-            return selectedContour;
+
+            return contourRows.Select(r => r.OrderBy(c => c[0].X));
         }
 
-        private Mat CannyEdge(Mat image, float ratio)
+        private static bool IsSameRow(IEnumerable<Point[]> contourRow, Point[] contour)
         {
-            var blur = new Mat();
-            var edge = new Mat();
-            image = image.Resize(new Size(), ratio, ratio);
-            Cv2.GaussianBlur(image, blur, new Size(5, 5), 0);
-            Cv2.Canny(blur, edge, 75, 200);
-            return edge;
-        }
-
-        private Rect ResizeBoundRect(Rect boundRect, float ratio)
-        {
-            return new Rect(
-                (int)(boundRect.X / ratio),
-                (int)(boundRect.Y / ratio),
-                (int)(boundRect.Width / ratio),
-                (int)(boundRect.Height / ratio));
+            return contourRow != null && Math.Abs(contour[0].Y - contourRow.Average(c => c[0].Y)) < 10;
         }
 
         private IEnumerable<Point2f> RatioPoints(float ratio, int x1, int y1, int x2, int y2, int x3, int y3, int x4, int y4)
@@ -158,18 +167,13 @@ namespace Bot_Application.Controllers
             };
         }
 
-        private double GetContourArea(Point[] polygon)
+        private Rect ResizeBoundRect(Rect boundRect, float ratio)
         {
-            double area = 0;
-            for (var i = 0; i < polygon.Length; i++)
-            {
-                var j = (i + 1) % polygon.Length;
-
-                area += polygon[i].X * polygon[j].Y;
-                area -= polygon[i].Y * polygon[j].X;
-            }
-
-            return Math.Abs(area / 2);
+            return new Rect(
+                (int)(boundRect.X / ratio),
+                (int)(boundRect.Y / ratio),
+                (int)(boundRect.Width / ratio),
+                (int)(boundRect.Height / ratio));
         }
     }
 }

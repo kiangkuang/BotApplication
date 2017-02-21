@@ -229,6 +229,7 @@
     <Compile Include="Controllers\MessagesController.cs" />
     <Compile Include="Controllers\OpenCv.cs" />
     <Compile Include="Controllers\Tesseract.cs" />
+    <Compile Include="Controllers\Toto.cs" />
     <Compile Include="Global.asax.cs">
       <DependentUpon>Global.asax</DependentUpon>
     </Compile>
