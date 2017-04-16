@@ -3,7 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 
-namespace Bot_Application.Controllers
+namespace TotoBot.Controllers
 {
     public class Toto
     {

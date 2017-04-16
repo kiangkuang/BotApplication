@@ -1,6 +1,6 @@
 ﻿using System.Web.Http;
 
-namespace Bot_Application
+namespace TotoBot
 {
     public class WebApiApplication : System.Web.HttpApplication
     {

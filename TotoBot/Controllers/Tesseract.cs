@@ -4,7 +4,7 @@ using System.Web.Hosting;
 using OpenCvSharp.CPlusPlus;
 using Tesseract;
 
-namespace Bot_Application.Controllers
+namespace TotoBot.Controllers
 {
     public class Tesseract
     {

@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using System.Web.Http;
 using Microsoft.Bot.Connector;
 
-namespace Bot_Application.Controllers
+namespace TotoBot.Controllers
 {
     [BotAuthentication]
     public class MessagesController : ApiController

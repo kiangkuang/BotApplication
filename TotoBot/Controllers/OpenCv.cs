@@ -4,7 +4,7 @@ using System.Linq;
 using OpenCvSharp;
 using OpenCvSharp.CPlusPlus;
 
-namespace Bot_Application.Controllers
+namespace TotoBot.Controllers
 {
     public class OpenCv
     {
